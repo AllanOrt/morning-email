@@ -1,0 +1,44 @@
+{
+    "monday": [
+        "NO",
+        "Svenska",
+        "Engelska",
+        "Matte",
+        "Lunch",
+        "Musik",
+        "SO"
+    ],
+    "tuesday": [
+        "NO-labb",
+        "NO-labb",
+        "Idrott",
+        "Svenska",
+        "Lunch",
+        "Matte",
+        "Spanska"
+    ],
+    "wednesday": [
+        "Matte",
+        "Engelska",
+        "SO",
+        "Lunch",
+        "NO",
+        "Idrott"
+    ],
+    "thursday": [
+        "Spanska",
+        "SO",
+        "Slöjd",
+        "Bild",
+        "Lunch",
+        "Engelska"
+    ],
+    "friday": [
+        "Matte",
+        "Svenska",
+        "Engelska",
+        "SO",
+        "Lunch",
+        "NO"
+    ]
+}
