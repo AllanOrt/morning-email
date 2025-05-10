@@ -1,74 +1,101 @@
 import requests
 import json
 import random
+import smtplib
+
 from datetime import datetime
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 
-# Constants
-LATITUDE = 0 # Set latitude here
-LONGITUDE = 0 # Set longitude here
-QUOTE_FILE = 'quotes.json'
-SCHEDULE_FILE = 'schedule.json'
-LUNCH_FILE = 'lunch.json'
+# === Configuration ===
+# Replace this
+LAT, LON = 0, 0
+EMAIL = {
+    "sender": "sender@example.com",
+    "receiver": "receiver@example.com",
+    "password": "password" # Or app password for gmail
+}
 
-# Load data
-def load_json(filename):
-    with open(filename, 'r', encoding='utf-8') as f:
-        return json.load(f)
 
-quotes = load_json(QUOTE_FILE)
-schedule = load_json(SCHEDULE_FILE)
-lunch_list = load_json(LUNCH_FILE)
+FILES = {"quotes": "quotes.json", "schedule": "schedule.json", "lunch": "lunch.json"}
 
-# Date and weekday
+# === Helpers ===
+def load_json(path): return json.load(open(path, encoding="utf-8"))
+def comma(val): return str(round(val, 1)).replace('.', ',')
+
+# === Load data ===
+quotes = load_json(FILES["quotes"])
+schedule = load_json(FILES["schedule"])
+lunch = load_json(FILES["lunch"])
+
+# === Date info ===
 now = datetime.now()
-weekday, today = now.strftime("%A").lower(), now.date().isoformat()
-lunch_date = now.strftime("%b%d").lower()
+weekday = now.strftime("%A").lower()
+today = now.date().isoformat()
+lunch_key = now.strftime("%b%d").lower()
 
-# Weather
-url = f"https://api.open-meteo.com/v1/forecast?latitude={LATITUDE}&longitude={LONGITUDE}&current_weather=true&hourly=temperature_2m,precipitation&timezone=auto"
-weather = requests.get(url).json()
+# === Weather ===
+weather_url = f"https://api.open-meteo.com/v1/forecast?latitude={LAT}&longitude={LON}&current_weather=true&hourly=temperature_2m,precipitation&timezone=auto"
+weather = requests.get(weather_url).json()
+hours = weather['hourly']['time']
+temps = weather['hourly']['temperature_2m']
+rains = weather['hourly']['precipitation']
 
-# Filter today's hours
-hours, temps, rain = weather['hourly']['time'], weather['hourly']['temperature_2m'], weather['hourly']['precipitation']
-rain_today = [(t, r) for t, r in zip(hours, rain) if today in t]
-temps_today = [t for t, time in zip(temps, hours) if time.startswith(today)]
-
-# Rain stats
+temps_today = [t for t, h in zip(temps, hours) if h.startswith(today)]
+rain_today = [(h, r) for h, r in zip(hours, rains) if today in h]
 total_rain = sum(r for _, r in rain_today)
 max_rain = max(rain_today, key=lambda x: x[1], default=(None, 0))
-most_rain_time = datetime.fromisoformat(max_rain[0]).strftime("%H:%M") if max_rain[0] else None
+most_rain_time = datetime.fromisoformat(max_rain[0]).strftime("%H:%M") if max_rain[0] else ""
 
-# Formatting
-def use_comma(value):
-    return str(round(value, 1)).replace('.', ',')
+# === Quote ===
+try:
+    quote_data = requests.get("https://zenquotes.io/api/random").json()[0]
+    extra_quote = f'<br><blockquote><em>“{quote_data["q"]}”</em><br>— {quote_data["a"]}</blockquote>'
+except:
+    extra_quote = ""
 
-# Get random quote
-quote_data = requests.get("https://zenquotes.io/api/random").json()[0] if requests.get("https://zenquotes.io/api/random").status_code == 200 else {}
-quote, author = quote_data.get("q", ""), quote_data.get("a", "")
+# === Sections ===
+rain_section = f"""
+    <br><li>Nederbörd idag: {comma(total_rain)} mm</li>
+    <li>Mest nederbörd: kl {most_rain_time} ({comma(max_rain[1])} mm)</li>
+""" if total_rain else ""
 
-# Output
-print("God morgon!")
+school_section = f"""
+    <br><h3>🏫 Skola:</h3>
+    <ul>{''.join(f"<li>{s}</li>" for s in schedule.get(weekday, []))}</ul>
+""" if weekday in schedule else ""
 
-print()
-print("⛅ Väder och temperatur:")
-print(f"    Temperatur just nu: {use_comma(weather['current_weather']['temperature'])}°C")
-print(f"    Kallast idag: {use_comma(min(temps_today))}°C")
-print(f"    Varmast idag: {use_comma(max(temps_today))}°C")
+lunch_section = f"""
+    <br><h3>🍽 Lunch:</h3>
+    <ul>{''.join(f"<li>{item}</li>" for item in lunch.get(lunch_key, []))}</ul>
+""" if lunch_key in lunch else ""
 
-if total_rain > 0:
-    print(f"\n    Nederbörd idag: {use_comma(total_rain)} mm")
-    print(f"    Mest nederbörd: kl {most_rain_time} ({use_comma(max_rain[1])} mm).")
+# === HTML content ===
+html = f"""
+<html><body>
+    <h3>⛅ Väder och temperatur:</h3>
+    <ul>
+        <li>Temperatur just nu: {comma(weather["current_weather"]["temperature"])}°C</li>
+        <li>Kallast idag: {comma(min(temps_today))}°C</li>
+        <li>Varmast idag: {comma(max(temps_today))}°C</li>
+        {rain_section}
+    </ul>
 
-print("\n💬 Dagliga citat:")
-print(f"    “{random.choice(quotes)}”")
-print("    — Linus Torvald")
-if quote and author:
-    print(f"\n    ”{quote}”\n    — {author}")
+    <h3>💬 Dagliga citat:</h3>
+    <blockquote><em>“{random.choice(quotes)}”</em><br>— Linus Torvald</blockquote>
+    {extra_quote}
+    {school_section}
+    {lunch_section}
+</body></html>
+"""
 
-print("\n🏫 Skola:")
-for subject in schedule.get(weekday, []):
-    print(f"    {subject}")
+# === Send email ===
+msg = MIMEMultipart("alternative")
+msg["From"] = EMAIL["sender"]
+msg["To"] = EMAIL["receiver"]
+msg["Subject"] = "God morgon!"
+msg.attach(MIMEText(html, "html"))
 
-if lunch_date in lunch_list:
-    for lunch in lunch_list[lunch_date]:
-        print(f"\n    Lunch: {lunch}")
+with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+    server.login(EMAIL["sender"], EMAIL["password"])
+    server.send_message(msg)
